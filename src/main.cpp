@@ -8,9 +8,16 @@
 #include "Eigen-3.3/Eigen/QR"
 #include "MPC.h"
 #include "json.hpp"
+#include <cppad/cppad.hpp>
+
 
 // for convenience
 using json = nlohmann::json;
+
+bool is_initialized = false;
+
+double epsi;
+double delta;
 
 // For converting back and forth between radians and degrees.
 constexpr double pi() { return M_PI; }
@@ -49,17 +56,17 @@ Eigen::VectorXd polyfit(Eigen::VectorXd xvals, Eigen::VectorXd yvals,
   assert(xvals.size() == yvals.size());
   assert(order >= 1 && order <= xvals.size() - 1);
   Eigen::MatrixXd A(xvals.size(), order + 1);
-
+  
   for (int i = 0; i < xvals.size(); i++) {
     A(i, 0) = 1.0;
   }
-
+  
   for (int j = 0; j < xvals.size(); j++) {
     for (int i = 0; i < order; i++) {
       A(j, i + 1) = A(j, i) * xvals(j);
     }
   }
-
+  
   auto Q = A.householderQr();
   auto result = Q.solve(yvals);
   return result;
@@ -67,10 +74,11 @@ Eigen::VectorXd polyfit(Eigen::VectorXd xvals, Eigen::VectorXd yvals,
 
 int main() {
   uWS::Hub h;
-
+  
   // MPC is initialized here!
   MPC mpc;
-
+  
+  
   h.onMessage([&mpc](uWS::WebSocket<uWS::SERVER> ws, char *data, size_t length,
                      uWS::OpCode opCode) {
     // "42" at the start of the message means there's a websocket message event.
@@ -85,22 +93,60 @@ int main() {
         string event = j[0].get<string>();
         if (event == "telemetry") {
           // j[1] is the data JSON object
+          
           vector<double> ptsx = j[1]["ptsx"];
           vector<double> ptsy = j[1]["ptsy"];
+          
+          // converting to vector to eigen-vector
+          double* ptrx = &ptsx[0];
+          Eigen::Map<Eigen::VectorXd> ptsx_v(ptrx, ptsx.size());
+          
+          double* ptry = &ptsy[0];
+          Eigen::Map<Eigen::VectorXd> ptsy_v(ptry, ptsy.size());
+          
+
           double px = j[1]["x"];
           double py = j[1]["y"];
           double psi = j[1]["psi"];
           double v = j[1]["speed"];
-
+          
+          double cte_pred;
+          double epsi_pred;
+          
+          
+          auto coeffs = polyfit(ptsx_v, ptsy_v, 3);
+          
+          if (is_initialized == false) {
+            
+            cte_pred = polyeval(coeffs, 0) - py;
+            epsi_pred = -atan(coeffs[1]);
+          }
+          else {
+            
+            
+            double f = polyeval(coeffs, px);
+            double psides = CppAD::atan(coeffs[1]);
+            
+            cte_pred = (f - py) + (v * CppAD::sin(epsi) * mpc.dt);
+            epsi_pred = (psi - psides) + v * delta / mpc.Lf * mpc.dt;
+          }
+          
+          
           /*
-          * TODO: Calculate steeering angle and throttle using MPC.
-          *
-          * Both are in between [-1, 1].
-          *
-          */
-          double steer_value;
-          double throttle_value;
-
+           * TODO: Calculate steeering angle and throttle using MPC.
+           *
+           * Both are in between [-1, 1].
+           *
+           */
+          Eigen::VectorXd state(6);
+          state << px, py, psi, v, cte_pred, epsi_pred;
+          auto vars = mpc.Solve(state, coeffs);
+          double steer_value = vars[6];
+          double throttle_value = vars[7];
+          
+          epsi = vars[5];
+          delta = vars[6];
+          
           json msgJson;
           msgJson["steering_angle"] = steer_value;
           msgJson["throttle"] = throttle_value;
@@ -117,6 +163,7 @@ int main() {
           // SUBMITTING.
           this_thread::sleep_for(chrono::milliseconds(100));
           ws.send(msg.data(), msg.length(), uWS::OpCode::TEXT);
+          is_initialized = true;
         }
       } else {
         // Manual driving
@@ -125,7 +172,7 @@ int main() {
       }
     }
   });
-
+  
   // We don't need this since we're not using HTTP but if it's removed the
   // program
   // doesn't compile :-(
@@ -139,17 +186,17 @@ int main() {
       res->end(nullptr, 0);
     }
   });
-
+  
   h.onConnection([&h](uWS::WebSocket<uWS::SERVER> ws, uWS::HttpRequest req) {
     std::cout << "Connected!!!" << std::endl;
   });
-
+  
   h.onDisconnection([&h](uWS::WebSocket<uWS::SERVER> ws, int code,
                          char *message, size_t length) {
     ws.close();
     std::cout << "Disconnected" << std::endl;
   });
-
+  
   int port = 4567;
   if (h.listen(port)) {
     std::cout << "Listening to port " << port << std::endl;
