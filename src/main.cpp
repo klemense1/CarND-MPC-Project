@@ -10,6 +10,7 @@
 #include "json.hpp"
 #include <cppad/cppad.hpp>
 
+#define DEBUG
 
 // for convenience
 using json = nlohmann::json;
@@ -93,7 +94,8 @@ int main() {
         string event = j[0].get<string>();
         if (event == "telemetry") {
           // j[1] is the data JSON object
-          
+/*
+#ifndef DEBUG
           vector<double> ptsx = j[1]["ptsx"];
           vector<double> ptsy = j[1]["ptsy"];
           
@@ -103,34 +105,41 @@ int main() {
           
           double* ptry = &ptsy[0];
           Eigen::Map<Eigen::VectorXd> ptsy_v(ptry, ptsy.size());
-          
+#endif
+*/
+#ifdef DEBUG
+          Eigen::VectorXd ptsx_v(2);
+          Eigen::VectorXd ptsy_v(2);
+          ptsx_v << -100, 100;
+          ptsy_v << -1, -1;
+#endif
 
           double px = j[1]["x"];
           double py = j[1]["y"];
           double psi = j[1]["psi"];
           double v = j[1]["speed"];
-          
+
           double cte_pred;
           double epsi_pred;
           
           
-          auto coeffs = polyfit(ptsx_v, ptsy_v, 3);
+          auto coeffs = polyfit(ptsx_v, ptsy_v, 1);
           
-          if (is_initialized == false) {
-            
-            cte_pred = polyeval(coeffs, 0) - py;
-            epsi_pred = -atan(coeffs[1]);
-          }
-          else {
-            
-            
-            double f = polyeval(coeffs, px);
-            double psides = CppAD::atan(coeffs[1]);
-            
-            cte_pred = (f - py) + (v * CppAD::sin(epsi) * mpc.dt);
-            epsi_pred = (psi - psides) + v * delta / mpc.Lf * mpc.dt;
-          }
+          //if (is_initialized == false) {
           
+          cte_pred = polyeval(coeffs, 0) - py;
+          epsi_pred = -atan(coeffs[1]);
+          /*}
+           else {
+           
+           
+           double f = polyeval(coeffs, px);
+           double psides = CppAD::atan(coeffs[1]);
+           
+           cte_pred = (f - py) + (v * CppAD::sin(epsi) * mpc.dt);
+           epsi_pred = (psi - psides) + v * delta / mpc.Lf * mpc.dt;
+           }
+           */
           
           /*
            * TODO: Calculate steeering angle and throttle using MPC.
@@ -138,15 +147,17 @@ int main() {
            * Both are in between [-1, 1].
            *
            */
+          
           Eigen::VectorXd state(6);
           state << px, py, psi, v, cte_pred, epsi_pred;
+          
           auto vars = mpc.Solve(state, coeffs);
           double steer_value = vars[6];
           double throttle_value = vars[7];
           
           epsi = vars[5];
           delta = vars[6];
-          
+                    
           json msgJson;
           msgJson["steering_angle"] = steer_value;
           msgJson["throttle"] = throttle_value;

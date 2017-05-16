@@ -24,7 +24,7 @@ double dt = 0.05;
 // The reference velocity is set to 40 mph.
 double ref_cte = 0;
 double ref_epsi = 0;
-double ref_v = 40;
+double ref_v = 20;
 
 // The solver takes all the state variables and actuator
 // varia___bles in a singular vector. Thus, we should to establish
@@ -71,7 +71,7 @@ class FG_eval {
     
     // Minimize the value gap between sequential actuations.
     for (int i = 0; i < N - 2; i++) {
-      fg[0] += 200 * CppAD::pow(vars[delta_start + i + 1] - vars[delta_start + i], 2);
+      fg[0] += CppAD::pow(vars[delta_start + i + 1] - vars[delta_start + i], 2);
       fg[0] += CppAD::pow(vars[a_start + i + 1] - vars[a_start + i], 2);
     }
     
@@ -125,11 +125,9 @@ class FG_eval {
 //
 
 MPC::MPC() {
-  // This is the length from front to CoG that has a similar radius.
-  Lf = 2.67;
-  // TODO (DONE): Set the timestep length and duration
-  N = 25;
-  dt = 0.05;
+  Lf_ = Lf;
+  N_ = N;
+  dt_ = dt;
 }
 
 MPC::~MPC() {}
@@ -151,9 +149,9 @@ vector<double> MPC::Solve(Eigen::VectorXd state, Eigen::VectorXd coeffs) {
   // element vector and there are 10 timesteps. The number of variables is:
   //
   // 4 * 10 + 2 * 9
-  size_t n_vars = N * 6 + (N - 1) * 2;
+  size_t n_vars = N_ * 6 + (N_ - 1) * 2;
   // TODO (DONE): Set the number of constraints
-  size_t n_constraints = N * 6;
+  size_t n_constraints = N_ * 6;
 
   // Initial value of the independent variables.
   // SHOULD BE 0 besides initial state.

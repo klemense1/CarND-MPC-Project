@@ -9,10 +9,10 @@ using namespace std;
 class MPC {
  public:
   // This is the length from front to CoG that has a similar radius.
-  double Lf;
+  double Lf_;
   // TODO (DONE): Set the timestep length and duration
-  size_t N;
-  double dt;
+  size_t N_;
+  double dt_;
   
   MPC();
 
