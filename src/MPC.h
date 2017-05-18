@@ -14,6 +14,9 @@ class MPC {
   size_t N_;
   double dt_;
   
+  vector<double> Xpred_;
+  vector<double> Ypred_;
+  
   MPC();
 
   virtual ~MPC();

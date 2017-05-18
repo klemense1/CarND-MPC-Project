@@ -17,8 +17,8 @@ using CppAD::AD;
 
 double Lf = 2.67;
 // TODO (DONE): Set the timestep length and duration
-size_t N = 25;
-double dt = 0.05;
+size_t N = 30;
+double dt = 0.1;
 
 // Both the reference cross track and orientation errors are 0.
 // The reference velocity is set to 40 mph.
@@ -243,6 +243,14 @@ vector<double> MPC::Solve(Eigen::VectorXd state, Eigen::VectorXd coeffs) {
   // Cost
   auto cost = solution.obj_value;
   std::cout << "Cost " << cost << std::endl;
+
+  Xpred_ = {};
+  Ypred_ = {};
+  
+  for (int i = 0; i < N - 1; i++) {
+    Xpred_.push_back(solution.x[x_start + i + 1]);
+    Ypred_.push_back(solution.x[y_start + i + 1]);
+  }
 
   // TODO: Return the first actuator values. The variables can be accessed with
   // `solution.x[i]`.

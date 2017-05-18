@@ -10,6 +10,7 @@ set(CXX_FLAGS "-Wall")
 set(CMAKE_CXX_FLAGS, "${CXX_FLAGS}")
 
 set(sources src/MPC.cpp src/main.cpp)
+set(headers src/MPC.h)
 
 include_directories(/usr/local/include)
 link_directories(/usr/local/lib)
@@ -23,6 +24,6 @@ link_directories(/usr/local/Cellar/libuv/1.11.0/lib)
 
 endif(${CMAKE_SYSTEM_NAME} MATCHES "Darwin")
 
-add_executable(mpc ${sources})
+add_executable(mpc ${sources} ${headers})
 
 target_link_libraries(mpc ipopt z ssl uv uWS)

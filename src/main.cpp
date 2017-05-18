@@ -10,7 +10,7 @@
 #include "json.hpp"
 #include <cppad/cppad.hpp>
 
-#define DEBUG
+//#define DEBUG
 
 // for convenience
 using json = nlohmann::json;
@@ -19,6 +19,7 @@ bool is_initialized = false;
 
 double epsi;
 double delta;
+
 
 // For converting back and forth between radians and degrees.
 constexpr double pi() { return M_PI; }
@@ -94,8 +95,7 @@ int main() {
         string event = j[0].get<string>();
         if (event == "telemetry") {
           // j[1] is the data JSON object
-/*
-#ifndef DEBUG
+          
           vector<double> ptsx = j[1]["ptsx"];
           vector<double> ptsy = j[1]["ptsy"];
           
@@ -105,40 +105,38 @@ int main() {
           
           double* ptry = &ptsy[0];
           Eigen::Map<Eigen::VectorXd> ptsy_v(ptry, ptsy.size());
-#endif
-*/
-#ifdef DEBUG
-          Eigen::VectorXd ptsx_v(2);
-          Eigen::VectorXd ptsy_v(2);
-          ptsx_v << -100, 100;
-          ptsy_v << -1, -1;
-#endif
-
+          /*
+           Eigen::VectorXd ptsx_v(2);
+           Eigen::VectorXd ptsy_v(2);
+           ptsx_v << -100, 100;
+           ptsy_v << -1, -1;
+           */
+          
           double px = j[1]["x"];
           double py = j[1]["y"];
           double psi = j[1]["psi"];
           double v = j[1]["speed"];
-
+          
           double cte_pred;
           double epsi_pred;
           
           
-          auto coeffs = polyfit(ptsx_v, ptsy_v, 1);
-          
-          //if (is_initialized == false) {
-          
-          cte_pred = polyeval(coeffs, 0) - py;
-          epsi_pred = -atan(coeffs[1]);
-          /*}
+          auto coeffs = polyfit(ptsx_v, ptsy_v, 3);
+          /*
+           //if (is_initialized == false) {
+           
+           cte_pred = polyeval(coeffs, 0) - py;
+           epsi_pred = -atan(coeffs[1]);
+           /*}
            else {
-           
-           
-           double f = polyeval(coeffs, px);
-           double psides = CppAD::atan(coeffs[1]);
-           
-           cte_pred = (f - py) + (v * CppAD::sin(epsi) * mpc.dt);
-           epsi_pred = (psi - psides) + v * delta / mpc.Lf * mpc.dt;
-           }
+           */
+          
+          double f = polyeval(coeffs, px);
+          double psides = CppAD::atan(coeffs[1]);
+          
+          cte_pred = (f - py) + (v * CppAD::sin(epsi) * mpc.dt_);
+          epsi_pred = (psi - psides) + v * delta / mpc.Lf_ * mpc.dt_;
+          /*}
            */
           
           /*
@@ -157,32 +155,48 @@ int main() {
           
           epsi = vars[5];
           delta = vars[6];
-                    
+          
           json msgJson;
-          msgJson["steering_angle"] = steer_value;
+          msgJson["steering_angle"] = 0;
           msgJson["throttle"] = throttle_value;
-
-          //Display the MPC predicted trajectory 
+          
+          //Display the MPC predicted trajectory
           vector<double> mpc_x_vals;
           vector<double> mpc_y_vals;
-
+          
           //.. add (x,y) points to list here, points are in reference to the vehicle's coordinate system
           // the points in the simulator are connected by a Green line
-
+          for (int i=0; i<mpc.Xpred_.size(); ++i) {
+            mpc_x_vals.push_back((mpc.Xpred_[i]-px)*cos(psi)+(mpc.Ypred_[i]-py)*sin(psi));
+            mpc_y_vals.push_back(-(mpc.Xpred_[i]-px)*sin(psi)+(mpc.Ypred_[i]-py)*cos(psi));
+          }
+          /*
+          for (int i=0; i<mpc_x_vals.size(); ++i) {
+            std::cout << "   Begin mpc_x_vals" << std::endl;
+            std::cout << mpc_x_vals[i] << ' ';
+            std::cout << "   End mpc_x_vals" << std::endl;
+          }
+          */
           msgJson["mpc_x"] = mpc_x_vals;
           msgJson["mpc_y"] = mpc_y_vals;
-
+          
           //Display the waypoints/reference line
-          vector<double> next_x_vals;
-          vector<double> next_y_vals;
-
+          
           //.. add (x,y) points to list here, points are in reference to the vehicle's coordinate system
           // the points in the simulator are connected by a Yellow line
-
-          msgJson["next_x"] = next_x_vals;
-          msgJson["next_y"] = next_y_vals;
-
-
+          
+          vector<double> next_x_vals;
+          vector<double> next_y_vals;
+          
+          for (int i=0; i<ptsx.size(); ++i) {
+            next_x_vals.push_back((ptsx[i]-px)*cos(psi)+(ptsy[i]-py)*sin(psi));
+            next_y_vals.push_back(-(ptsx[i]-px)*sin(psi)+(ptsy[i]-py)*cos(psi));
+          }
+          
+          msgJson["next_x"] = next_x_vals; //next_x_vals;
+          msgJson["next_y"] = next_y_vals; //next_y_vals;
+          
+          
           auto msg = "42[\"steer\"," + msgJson.dump() + "]";
           std::cout << msg << std::endl;
           // Latency
@@ -194,7 +208,7 @@ int main() {
           //
           // NOTE: REMEMBER TO SET THIS TO 100 MILLISECONDS BEFORE
           // SUBMITTING.
-          this_thread::sleep_for(chrono::milliseconds(100));
+          this_thread::sleep_for(chrono::milliseconds(0));
           ws.send(msg.data(), msg.length(), uWS::OpCode::TEXT);
           is_initialized = true;
         }
