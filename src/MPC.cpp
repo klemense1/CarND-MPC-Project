@@ -2,6 +2,7 @@
 #include <cppad/cppad.hpp>
 #include <cppad/ipopt/solve.hpp>
 #include "Eigen-3.3/Eigen/Core"
+#include <math.h>
 
 using CppAD::AD;
 
@@ -16,15 +17,14 @@ using CppAD::AD;
 //
 
 double Lf = 2.67;
-// TODO (DONE): Set the timestep length and duration
-size_t N = 30;
-double dt = 0.1;
+size_t N = 20;
+double dt = 0.03;
 
 // Both the reference cross track and orientation errors are 0.
 // The reference velocity is set to 40 mph.
 double ref_cte = 0;
 double ref_epsi = 0;
-double ref_v = 20;
+double ref_v = 40;
 
 // The solver takes all the state variables and actuator
 // varia___bles in a singular vector. Thus, we should to establish
@@ -46,6 +46,8 @@ class FG_eval {
   FG_eval(Eigen::VectorXd coeffs) { this->coeffs = coeffs; }
 
   typedef CPPAD_TESTVECTOR(AD<double>) ADvector;
+  // `fg` is a vector containing the cost and constraints.
+  // `vars` is a vector containing the variable values (state & actuators).
   void operator()(ADvector& fg, const ADvector& vars) {
     // TODO (DONE?): implement MPC
     // fg a vector of constraints, x is a vector of constraints.
@@ -65,7 +67,7 @@ class FG_eval {
     
     // Minimize the use of actuators.
     for (int i = 0; i < N - 1; i++) {
-      fg[0] += CppAD::pow(vars[delta_start + i], 2);
+      fg[0] += 200*CppAD::pow(vars[delta_start + i], 2);
       fg[0] += CppAD::pow(vars[a_start + i], 2);
     }
     
@@ -107,8 +109,8 @@ class FG_eval {
       AD<double> delta0 = vars[delta_start + i];
       AD<double> a0 = vars[a_start + i];
       
-      AD<double> f0 = coeffs[0] + coeffs[1] * x0;
-      AD<double> psides0 = CppAD::atan(coeffs[1]);
+      AD<double> f0 = 3*x0*x0*x0*coeffs[3]+2*x0*x0*coeffs[2]+x0*coeffs[1] + coeffs[0];
+      AD<double> psides0 = CppAD::atan(3*x0*x0*coeffs[3]+2*x0*coeffs[2]+coeffs[1]);
       
       fg[2 + x_start + i] = x1 - (x0 + v0 * CppAD::cos(psi0) * dt);
       fg[2 + y_start + i] = y1 - (y0 + v0 * CppAD::sin(psi0) * dt);
@@ -160,6 +162,14 @@ vector<double> MPC::Solve(Eigen::VectorXd state, Eigen::VectorXd coeffs) {
     vars[i] = 0.0;
   }
 
+  // Set the initial variable values
+  vars[x_start] = x;
+  vars[y_start] = y;
+  vars[psi_start] = psi;
+  vars[v_start] = v;
+  vars[cte_start] = cte;
+  vars[epsi_start] = epsi;
+  
   Dvector vars_lowerbound(n_vars);
   Dvector vars_upperbound(n_vars);
   // TODO (DONE): Set lower and upper limits for variables.
@@ -252,11 +262,7 @@ vector<double> MPC::Solve(Eigen::VectorXd state, Eigen::VectorXd coeffs) {
     Ypred_.push_back(solution.x[y_start + i + 1]);
   }
 
-  // TODO: Return the first actuator values. The variables can be accessed with
-  // `solution.x[i]`.
-  //
-  // {...} is shorthand for creating a vector, so auto x1 = {1.0,2.0}
-  // creates a 2 element double vector.
+  // Return the first actuator values
   return {solution.x[x_start + 1],   solution.x[y_start + 1],
     solution.x[psi_start + 1], solution.x[v_start + 1],
     solution.x[cte_start + 1], solution.x[epsi_start + 1],

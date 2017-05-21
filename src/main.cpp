@@ -9,7 +9,7 @@
 #include "MPC.h"
 #include "json.hpp"
 #include <cppad/cppad.hpp>
-
+#include <chrono>
 //#define DEBUG
 
 // for convenience
@@ -17,9 +17,11 @@ using json = nlohmann::json;
 
 bool is_initialized = false;
 
-double epsi;
-double delta;
-
+double cte_pred = 0;
+double epsi_pred = 0;
+double epsi = 0;
+double delta = 0;
+std::chrono::steady_clock::time_point last_time = std::chrono::steady_clock::now();
 
 // For converting back and forth between radians and degrees.
 constexpr double pi() { return M_PI; }
@@ -94,109 +96,69 @@ int main() {
         auto j = json::parse(s);
         string event = j[0].get<string>();
         if (event == "telemetry") {
+          
+          std::chrono::steady_clock::time_point current_time = std::chrono::steady_clock::now();
+          double elapsed_secs = std::chrono::duration_cast<std::chrono::microseconds>(current_time - last_time).count() /1000000.0;
+          last_time = std::chrono::steady_clock::now();
+
+          std::cout<<elapsed_secs<<std::endl;
           // j[1] is the data JSON object
           
           vector<double> ptsx = j[1]["ptsx"];
           vector<double> ptsy = j[1]["ptsy"];
-          
-          // converting to vector to eigen-vector
-          double* ptrx = &ptsx[0];
-          Eigen::Map<Eigen::VectorXd> ptsx_v(ptrx, ptsx.size());
-          
-          double* ptry = &ptsy[0];
-          Eigen::Map<Eigen::VectorXd> ptsy_v(ptry, ptsy.size());
-          /*
-           Eigen::VectorXd ptsx_v(2);
-           Eigen::VectorXd ptsy_v(2);
-           ptsx_v << -100, 100;
-           ptsy_v << -1, -1;
-           */
           
           double px = j[1]["x"];
           double py = j[1]["y"];
           double psi = j[1]["psi"];
           double v = j[1]["speed"];
           
-          double cte_pred;
-          double epsi_pred;
+          vector<double> refx_carRF;
+          vector<double> refy_carRF;
           
+          for (int i=0; i<ptsx.size(); ++i) {
+            refx_carRF.push_back((ptsx[i]-px)*cos(psi)+(ptsy[i]-py)*sin(psi));
+            refy_carRF.push_back(-(ptsx[i]-px)*sin(psi)+(ptsy[i]-py)*cos(psi));
+          }
           
-          auto coeffs = polyfit(ptsx_v, ptsy_v, 3);
-          /*
-           //if (is_initialized == false) {
-           
-           cte_pred = polyeval(coeffs, 0) - py;
-           epsi_pred = -atan(coeffs[1]);
-           /*}
-           else {
-           */
+          // converting to vector to eigen-vector
+          double* ptrx = &refx_carRF[0];
+          Eigen::Map<Eigen::VectorXd> posx_carRF_eigen(ptrx, refx_carRF.size());
           
-          double f = polyeval(coeffs, px);
-          double psides = CppAD::atan(coeffs[1]);
+          double* ptry = &refy_carRF[0];
+          Eigen::Map<Eigen::VectorXd> posy_carRF_eigen(ptry, refy_carRF.size());
           
-          cte_pred = (f - py) + (v * CppAD::sin(epsi) * mpc.dt_);
-          epsi_pred = (psi - psides) + v * delta / mpc.Lf_ * mpc.dt_;
-          /*}
-           */
+          auto coeffs = polyfit(posx_carRF_eigen, posy_carRF_eigen, 3);
+
+          double x_eval = v*elapsed_secs; // calculate trajectory for 100s to the future;
+          double f = polyeval(coeffs, x_eval);
+          // desired psi calculated as arctan of derivate of f
+          double psi_des = CppAD::atan(3*x_eval*x_eval*coeffs[3]+2*x_eval*coeffs[2]+coeffs[1]);
           
-          /*
-           * TODO: Calculate steeering angle and throttle using MPC.
-           *
-           * Both are in between [-1, 1].
-           *
-           */
+          // in map coordinates
+          cte_pred = (f - 0) + (v * CppAD::sin(epsi) * mpc.dt_);
+          epsi_pred = (0 - psi_des) + v * delta / mpc.Lf_ * mpc.dt_;
           
           Eigen::VectorXd state(6);
-          state << px, py, psi, v, cte_pred, epsi_pred;
+          state << x_eval, 0, 0, v, cte_pred, epsi_pred;
           
           auto vars = mpc.Solve(state, coeffs);
+          epsi = vars[5];
           double steer_value = vars[6];
           double throttle_value = vars[7];
           
-          epsi = vars[5];
-          delta = vars[6];
-          
           json msgJson;
-          msgJson["steering_angle"] = 0;
+          msgJson["steering_angle"] = -steer_value;
           msgJson["throttle"] = throttle_value;
           
           //Display the MPC predicted trajectory
-          vector<double> mpc_x_vals;
-          vector<double> mpc_y_vals;
+          msgJson["mpc_x"] = mpc.Xpred_;
+          msgJson["mpc_y"] = mpc.Ypred_;
           
-          //.. add (x,y) points to list here, points are in reference to the vehicle's coordinate system
-          // the points in the simulator are connected by a Green line
-          for (int i=0; i<mpc.Xpred_.size(); ++i) {
-            mpc_x_vals.push_back((mpc.Xpred_[i]-px)*cos(psi)+(mpc.Ypred_[i]-py)*sin(psi));
-            mpc_y_vals.push_back(-(mpc.Xpred_[i]-px)*sin(psi)+(mpc.Ypred_[i]-py)*cos(psi));
-          }
-          /*
-          for (int i=0; i<mpc_x_vals.size(); ++i) {
-            std::cout << "   Begin mpc_x_vals" << std::endl;
-            std::cout << mpc_x_vals[i] << ' ';
-            std::cout << "   End mpc_x_vals" << std::endl;
-          }
-          */
-          msgJson["mpc_x"] = mpc_x_vals;
-          msgJson["mpc_y"] = mpc_y_vals;
+          //Display the reference line
+          msgJson["next_x"] = refx_carRF;
+          msgJson["next_y"] = refy_carRF;
           
-          //Display the waypoints/reference line
-          
-          //.. add (x,y) points to list here, points are in reference to the vehicle's coordinate system
-          // the points in the simulator are connected by a Yellow line
-          
-          vector<double> next_x_vals;
-          vector<double> next_y_vals;
-          
-          for (int i=0; i<ptsx.size(); ++i) {
-            next_x_vals.push_back((ptsx[i]-px)*cos(psi)+(ptsy[i]-py)*sin(psi));
-            next_y_vals.push_back(-(ptsx[i]-px)*sin(psi)+(ptsy[i]-py)*cos(psi));
-          }
-          
-          msgJson["next_x"] = next_x_vals; //next_x_vals;
-          msgJson["next_y"] = next_y_vals; //next_y_vals;
-          
-          
+                    
           auto msg = "42[\"steer\"," + msgJson.dump() + "]";
           std::cout << msg << std::endl;
           // Latency
@@ -208,7 +170,7 @@ int main() {
           //
           // NOTE: REMEMBER TO SET THIS TO 100 MILLISECONDS BEFORE
           // SUBMITTING.
-          this_thread::sleep_for(chrono::milliseconds(0));
+          this_thread::sleep_for(chrono::milliseconds(100));
           ws.send(msg.data(), msg.length(), uWS::OpCode::TEXT);
           is_initialized = true;
         }
