@@ -22,7 +22,7 @@ Self-Driving Car Engineer Nanodegree Program
   * Mac: `brew install ipopt --with-openblas`
   * Linux
     * You will need a version of Ipopt 3.12.1 or higher. The version available through `apt-get` is 3.11.x. If you can get that version to work great but if not there's a script `install_ipopt.sh` that will install Ipopt. You just need to download the source from the Ipopt [releases page](https://www.coin-or.org/download/source/Ipopt/) or the [Github releases](https://github.com/coin-or/Ipopt/releases) page.
-    * Then call `install_ipopt.sh` with the source directory as the first argument, ex: `bash install_ipopt.sh Ipopt-3.12.1`. 
+    * Then call `install_ipopt.sh` with the source directory as the first argument, ex: `bash install_ipopt.sh Ipopt-3.12.1`.
   * Windows: TODO. If you can use the Linux subsystem and follow the Linux instructions.
 * [CppAD](https://www.coin-or.org/CppAD/)
   * Mac: `brew install cppad`
@@ -41,66 +41,51 @@ Self-Driving Car Engineer Nanodegree Program
 3. Compile: `cmake .. && make`
 4. Run it: `./mpc`.
 
-## Tips
+## Implementation
 
-1. It's recommended to test the MPC on basic examples to see if your implementation behaves as desired. One possible example
-is the vehicle starting offset of a straight line (reference). If the MPC implementation is correct, after some number of timesteps
-(not too many) it should find and track the reference line.
-2. The `lake_track_waypoints.csv` file has the waypoints of the lake track. You could use this to fit polynomials and points and see of how well your model tracks curve. NOTE: This file might be not completely in sync with the simulator so your solution should NOT depend on it.
-3. For visualization this C++ [matplotlib wrapper](https://github.com/lava/matplotlib-cpp) could be helpful.
+#### State
+As a state vector, I used x, y, psi (orientation) and v (velocity). To achieve a control that stays on the street with the right orientation, I have to minimize the following errors
+* Cross Track Error cte1 = (f0 - y0) + v0 * sin(epsi0) * dt;
+* Orientation Error epsi1 = (psi0 - psides0) + v0 * delta0 * dt / Lf;
 
-## Editor Settings
+Thus, the state vector is extended by the two errors cte and epsi. By predicting how the error is going to evolve to the next time step given a certain actuation, one can find the actuation minimizing the error over time.
 
-We've purposefully kept editor configuration files out of this repo in order to
-keep it as simple and environment agnostic as possible. However, we recommend
-using the following settings:
+#### Actuator
+As a actuator, I used theta (steering angle) and a (acceleration combining throttle and breaking)
 
-* indent using spaces
-* set tab width to 2 spaces (keeps the matrices in source code aligned)
+#### Model
+I am using a kinematic bycicle model assuming both axes as one wheel and beeing able to only steer the front wheel.
 
-## Code Style
+The discrete update equations for the state vector are the following:
+* x1 = x0 + v0 * cos(psi0) * dt
+* y1 = y0 + v0 * sin(psi0) * dt
+* psi1 = psi0 + v0 * dt delta0 / Lf
+* v1 = v0 + a0 * dt
 
-Please (do your best to) stick to [Google's C++ style guide](https://google.github.io/styleguide/cppguide.html).
+The road is given as xy-coordinates and is fitted as a 3rd order polynom to allow for an evaluation at the points we are predicting in the MPC.
 
-## Project Instructions and Rubric
+#### Cost function
+Costs and constraints (e.g. kinematic constraints for steering or throttle) are stored in the vector fg.
 
-Note: regardless of the changes you make, your project must be buildable using
-cmake and make!
+The cost functions contains
+* cte
+* epsi
+* speed difference to reference speed
+* use of actuation (steering and throttle)
+* change of actuation (change of steering and throttle)
 
-More information is only accessible by people who are already enrolled in Term 2
-of CarND. If you are enrolled, see [the project page](https://classroom.udacity.com/nanodegrees/nd013/parts/40f38239-66b6-46ec-ae68-03afd8a601c8/modules/f1820894-8322-4bb3-81aa-b26b3c6dcbaf/lessons/b1ff3be0-c904-438e-aad3-2b5379f0e0c3/concepts/1a2255a0-e23c-44cf-8d41-39b8a3c8264a)
-for instructions and the project rubric.
+#### Horizon
+The time horizon should only be a second or so, as the environment will change too much behind that to allow for a meaningfull prediction. I tried a couple of combinations betweeen number of points (N in the code) and time step (dt in the code) and finally settled with N=20 and dt=0.03. I assume the model to be quite robust to work with slightly different parameters as well.
 
-## Hints!
+#### Simulator
+The simulator returns the state of the vehicle in global coordinates. I then transform them to a car-reference system, as it makes it easier to calculate the errors epsi and cte.
 
-* You don't have to follow this directory structure, but if you do, your work
-  will span all of the .cpp files here. Keep an eye out for TODOs.
+To allow for an actuation delay (which is modelled as a 100ms sleep of the thread), I am measuring the time the opimization and actuation takes (elapsed_sec in the code) and solve the actuation for the current state vector
+* x = v*elapsed_sec
+* y = 0
+* psi = 0
+* v = v
+* cte = f  + v * sin(epsi) * mpc.dt_
+* epsi = psi_des + v * delta * mpc.dt_ / mpc.Lf_
 
-## Call for IDE Profiles Pull Requests
-
-Help your fellow students!
-
-We decided to create Makefiles with cmake to keep this project as platform
-agnostic as possible. Similarly, we omitted IDE profiles in order to we ensure
-that students don't feel pressured to use one IDE or another.
-
-However! I'd love to help people get up and running with their IDEs of choice.
-If you've created a profile for an IDE that you think other students would
-appreciate, we'd love to have you add the requisite profile files and
-instructions to ide_profiles/. For example if you wanted to add a VS Code
-profile, you'd add:
-
-* /ide_profiles/vscode/.vscode
-* /ide_profiles/vscode/README.md
-
-The README should explain what the profile does, how to take advantage of it,
-and how to install it.
-
-Frankly, I've never been involved in a project with multiple IDE profiles
-before. I believe the best way to handle this would be to keep them out of the
-repo root to avoid clutter. My expectation is that most profiles will include
-instructions to copy files to a new location to get picked up by the IDE, but
-that's just a guess.
-
-One last note here: regardless of the IDE used, every submitted project must
-still be compilable with cmake and make./
+The mpc problem is then solved.

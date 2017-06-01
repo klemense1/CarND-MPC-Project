@@ -134,7 +134,7 @@ int main() {
           // desired psi calculated as arctan of derivate of f
           double psi_des = CppAD::atan(3*x_eval*x_eval*coeffs[3]+2*x_eval*coeffs[2]+coeffs[1]);
           
-          // in map coordinates
+          // in vehicle coordinates
           cte_pred = (f - 0) + (v * CppAD::sin(epsi) * mpc.dt_);
           epsi_pred = (0 - psi_des) + v * delta / mpc.Lf_ * mpc.dt_;
           
