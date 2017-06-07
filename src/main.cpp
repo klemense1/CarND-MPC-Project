@@ -82,6 +82,14 @@ double convert_velocity(double speed_milesph) {
   return speed_meterps;
 }
 
+void transform_reference_system(const vector<double> ptsx_gloRF, const vector<double> ptsy_gloRF, double px, double py, double psi, vector<double> &refx_carRF, vector<double> &refy_carRF) {
+  
+  for (int i=0; i<ptsx_gloRF.size(); ++i) {
+    refx_carRF.push_back((ptsx_gloRF[i]-px)*cos(psi)+(ptsy_gloRF[i]-py)*sin(psi));
+    refy_carRF.push_back(-(ptsx_gloRF[i]-px)*sin(psi)+(ptsy_gloRF[i]-py)*cos(psi));
+  }
+}
+
 int main() {
   uWS::Hub h;
   
@@ -106,12 +114,12 @@ int main() {
           std::chrono::steady_clock::time_point current_time = std::chrono::steady_clock::now();
           double elapsed_secs = std::chrono::duration_cast<std::chrono::microseconds>(current_time - last_time).count() /1000000.0;
           last_time = std::chrono::steady_clock::now();
-
+          
           std::cout<<elapsed_secs<<std::endl;
           // j[1] is the data JSON object
           
-          vector<double> ptsx = j[1]["ptsx"];
-          vector<double> ptsy = j[1]["ptsy"];
+          vector<double> refx_gloRF = j[1]["ptsx"];
+          vector<double> refy_gloRF = j[1]["ptsy"];
           
           double px = j[1]["x"];
           double py = j[1]["y"];
@@ -122,10 +130,7 @@ int main() {
           vector<double> refx_carRF;
           vector<double> refy_carRF;
           
-          for (int i=0; i<ptsx.size(); ++i) {
-            refx_carRF.push_back((ptsx[i]-px)*cos(psi)+(ptsy[i]-py)*sin(psi));
-            refy_carRF.push_back(-(ptsx[i]-px)*sin(psi)+(ptsy[i]-py)*cos(psi));
-          }
+          transform_reference_system(refx_gloRF, refy_gloRF, px, py, psi, refx_carRF, refy_carRF);
           
           // converting to vector to eigen-vector
           double* ptrx = &refx_carRF[0];
@@ -135,7 +140,7 @@ int main() {
           Eigen::Map<Eigen::VectorXd> posy_carRF_eigen(ptry, refy_carRF.size());
           
           auto coeffs = polyfit(posx_carRF_eigen, posy_carRF_eigen, 3);
-
+          
           double x_eval = v_ms*elapsed_secs; // calculate trajectory for 100s to the future;
           double f = polyeval(coeffs, x_eval);
           // desired psi calculated as arctan of derivate of f
@@ -165,7 +170,7 @@ int main() {
           msgJson["next_x"] = refx_carRF;
           msgJson["next_y"] = refy_carRF;
           
-                    
+          
           auto msg = "42[\"steer\"," + msgJson.dump() + "]";
           std::cout << msg << std::endl;
           // Latency
