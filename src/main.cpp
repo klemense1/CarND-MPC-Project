@@ -76,6 +76,12 @@ Eigen::VectorXd polyfit(Eigen::VectorXd xvals, Eigen::VectorXd yvals,
   return result;
 }
 
+// convert miles per hour to meter per second
+double convert_velocity(double speed_milesph) {
+  double speed_meterps = 1609.34*speed_milesph/3600;
+  return speed_meterps;
+}
+
 int main() {
   uWS::Hub h;
   
@@ -111,6 +117,7 @@ int main() {
           double py = j[1]["y"];
           double psi = j[1]["psi"];
           double v = j[1]["speed"];
+          double v_ms = convert_velocity(v);
           
           vector<double> refx_carRF;
           vector<double> refy_carRF;
@@ -129,14 +136,14 @@ int main() {
           
           auto coeffs = polyfit(posx_carRF_eigen, posy_carRF_eigen, 3);
 
-          double x_eval = v*elapsed_secs; // calculate trajectory for 100s to the future;
+          double x_eval = v_ms*elapsed_secs; // calculate trajectory for 100s to the future;
           double f = polyeval(coeffs, x_eval);
           // desired psi calculated as arctan of derivate of f
           double psi_des = CppAD::atan(3*x_eval*x_eval*coeffs[3]+2*x_eval*coeffs[2]+coeffs[1]);
           
           // in vehicle coordinates
-          cte_pred = (f - 0) + (v * CppAD::sin(epsi) * mpc.dt_);
-          epsi_pred = (0 - psi_des) + v * delta / mpc.Lf_ * mpc.dt_;
+          cte_pred = (f - 0) + (v_ms * CppAD::sin(epsi) * mpc.dt_);
+          epsi_pred = (0 - psi_des) + v_ms * delta / mpc.Lf_ * mpc.dt_;
           
           Eigen::VectorXd state(6);
           state << x_eval, 0, 0, v, cte_pred, epsi_pred;
